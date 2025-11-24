@@ -45,8 +45,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
+    // Clear API service tokens
+    await apiService.logout();
+    // Also sign out from Firebase SDK
     await auth.signOut();
-    // Firebase auth state listener will handle clearing the state
+    // Manually clear state
+    setCurrentUser(null);
+    setUserProfile(null);
   }
 
   function updateUserProfile(profile: UserProfile) {

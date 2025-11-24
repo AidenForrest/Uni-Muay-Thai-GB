@@ -1,0 +1,8 @@
+# Proxy API requests to backend (avoids CORS issues)
+/profile/*  https://api-onhttprequest-ezkortf4ua-nw.a.run.app/profile/:splat  200
+/fighter/*  https://api-onhttprequest-ezkortf4ua-nw.a.run.app/fighter/:splat  200
+/coach/*    https://api-onhttprequest-ezkortf4ua-nw.a.run.app/coach/:splat    200
+/health     https://api-onhttprequest-ezkortf4ua-nw.a.run.app/health          200
+
+# SPA fallback - must be last
+/*  /index.html  200

@@ -5,9 +5,8 @@ export const CONFIG = {
   USE_MOCK_API: false,
   
   // API configuration
-  // In development, use relative URL to go through proxy and avoid CORS
-  // In production, use the full URL
-  API_BASE_URL: process.env.NODE_ENV === 'development' ? '' : 'https://api-onhttprequest-ezkortf4ua-nw.a.run.app',
+  // Use relative URL in both dev and production (proxied via package.json and Netlify _redirects)
+  API_BASE_URL: '',
   FIREBASE_AUTH_API_KEY: 'AIzaSyAMaNGvMko_b0zl8igwnJC3552h_I_AplE',
   FIREBASE_REST_AUTH_URL: 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword',
   FIREBASE_TOKEN_EXCHANGE_URL: 'https://securetoken.googleapis.com/v1/token',

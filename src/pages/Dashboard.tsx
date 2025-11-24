@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import AthleteQRCode from '../components/QRCode/AthleteQRCode';
 
 export default function Dashboard() {
   const { userProfile, logout } = useAuth();
@@ -31,7 +32,7 @@ export default function Dashboard() {
             <h2>Muay Thai GB</h2>
           </div>
           <div className="nav-actions">
-            <span className="user-greeting">Welcome, {userProfile.displayName}</span>
+            <span className="user-greeting">Welcome, {userProfile.name}</span>
             <button onClick={handleLogout} className="logout-btn">
               Logout
             </button>
@@ -50,7 +51,7 @@ export default function Dashboard() {
           <div className="profile-details">
             <div className="profile-item">
               <label>Name:</label>
-              <span>{userProfile.displayName}</span>
+              <span>{userProfile.name}</span>
             </div>
             <div className="profile-item">
               <label>Email:</label>
@@ -58,52 +59,60 @@ export default function Dashboard() {
             </div>
             <div className="profile-item">
               <label>Account Type:</label>
-              <span className="user-type">{userProfile.userType === 'athlete' ? 'Individual Athlete' : 'Medical Professional'}</span>
+              <span className="user-type">{userProfile.userType === 'fighter' ? 'Fighter/Athlete' : 'Medical Professional'}</span>
             </div>
             <div className="profile-item">
-              <label>Phone:</label>
-              <span>{userProfile.phone}</span>
+              <label>Mobile:</label>
+              <span>{userProfile.mobile}</span>
             </div>
-            {userProfile.userType === 'athlete' && (
+            <div className="profile-item">
+              <label>Email Verified:</label>
+              <span>{userProfile.emailVerified ? '✅ Verified' : '❌ Not Verified'}</span>
+            </div>
+            <div className="profile-item">
+              <label>Mobile Verified:</label>
+              <span>{userProfile.mobileVerified ? '✅ Verified' : '❌ Not Verified'}</span>
+            </div>
+            <div className="profile-item">
+              <label>Member Code:</label>
+              <span>{userProfile.memberCode}</span>
+            </div>
+            {userProfile.status && (
+              <div className="profile-item">
+                <label>Status:</label>
+                <span className={`status ${userProfile.status.toLowerCase()}`}>
+                  {userProfile.status.charAt(0).toUpperCase() + userProfile.status.slice(1)}
+                </span>
+              </div>
+            )}
+            {userProfile.userType === 'fighter' && (
               <>
-                <div className="profile-item">
-                  <label>Member Number:</label>
-                  <span>{userProfile.membershipNumber}</span>
-                </div>
                 {userProfile.dateOfBirth && (
                   <div className="profile-item">
                     <label>Date of Birth:</label>
                     <span>{userProfile.dateOfBirth}</span>
                   </div>
                 )}
-                {userProfile.address && (
+                {userProfile.biologicalSex && (
+                  <div className="profile-item">
+                    <label>Biological Sex:</label>
+                    <span>{userProfile.biologicalSex.charAt(0).toUpperCase() + userProfile.biologicalSex.slice(1)}</span>
+                  </div>
+                )}
+                {userProfile.addresses && userProfile.addresses.length > 0 && (
                   <div className="profile-item">
                     <label>Address:</label>
-                    <span>{userProfile.address}</span>
+                    <span>
+                      {userProfile.addresses.join('; ')}
+                    </span>
                   </div>
                 )}
-                {userProfile.affiliatedGym && (
+                {userProfile.emergencyContacts && userProfile.emergencyContacts.length > 0 && (
                   <div className="profile-item">
-                    <label>Affiliated Gym:</label>
-                    <span>{userProfile.affiliatedGym}</span>
-                  </div>
-                )}
-                {userProfile.emergencyContact && (
-                  <div className="profile-item">
-                    <label>Emergency Contact:</label>
-                    <span>{userProfile.emergencyContact}</span>
-                  </div>
-                )}
-                {userProfile.medicalConditions && (
-                  <div className="profile-item">
-                    <label>Medical Conditions:</label>
-                    <span>{userProfile.medicalConditions}</span>
-                  </div>
-                )}
-                {userProfile.allergies && (
-                  <div className="profile-item">
-                    <label>Allergies:</label>
-                    <span>{userProfile.allergies}</span>
+                    <label>Emergency Contacts:</label>
+                    <span>
+                      {userProfile.emergencyContacts.join('; ')}
+                    </span>
                   </div>
                 )}
               </>
@@ -114,19 +123,26 @@ export default function Dashboard() {
         <div className="dashboard-grid">
           <div className="dashboard-card">
             <div className="card-icon">📷</div>
-            <h3>{userProfile.userType === 'athlete' ? 'View QR Code' : 'Scan QR Code'}</h3>
-            <p>{userProfile.userType === 'athlete' ? 'View your unique QR code and download to your wallet' : 'Scan QR code to view and manage Athlete information'}</p>
-            <button className="card-button" disabled>
-              Coming Soon
-            </button>
+            <h3>{userProfile.userType === 'fighter' ? 'Medical Pass QR Code' : 'Scan QR Code'}</h3>
+            <p>{userProfile.userType === 'fighter' ? 'View your unique QR code and download for medical checks' : 'Scan QR code to view and manage Fighter information'}</p>
+            {userProfile.userType === 'fighter' ? (
+              <AthleteQRCode
+                profileId={userProfile.profileId}
+                athleteName={userProfile.name || 'Athlete'}
+              />
+            ) : (
+              <button className="card-button" disabled>
+                Coming Soon
+              </button>
+            )}
           </div>
 
           <div className="dashboard-card">
             <div className="card-icon">⚙️</div>
             <h3>Account</h3>
-            <p>View and manage your account into.</p>
-            <button className="card-button" disabled>
-              Coming Soon
+            <p>View and manage your account info.</p>
+            <button className="card-button" onClick={() => navigate('/account-settings')}>
+              Manage Account
             </button>
           </div>
 

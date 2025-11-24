@@ -1,186 +1,504 @@
-// API service layer for Muay Thai GB app
-// This provides mock endpoints that will be replaced with real API calls later
+// API Service matching Swagger specification exactly
+// Uses Firebase REST API for auth, then MTGB API with bearer token
 
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../config/firebase';
+import { firebaseAuthService } from './firebaseAuth';
+import { mockDataService } from './mockData';
+import { CONFIG } from '../config/features';
+import {
+  ApiResponse,
+  UserProfile,
+  AuthUser,
+  ProfileResponse,
+  FighterResponse,
+  CoachResponse,
+  PiiResponse,
+  UpdateProfileRequest,
+  UpdatePiiRequest,
+  UpdateScopeRequest,
+  AddressSuggestionResponse,
+  AddressFromSuggestionResponse,
+  HealthResponse,
+  Address,
+  EmergencyContact,
+} from '../types/api.types';
 
-export interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
+const normaliseValueList = (
+  items?: Array<string | Address | EmergencyContact>
+): string[] | undefined => {
+  if (!items) {
+    return undefined;
+  }
 
-export interface UserProfile {
-  uid: string;
-  email: string;
-  displayName: string;
-  userType: 'athlete' | 'medic';
-  phone: string;
-  dateOfBirth?: string;
-  emergencyContact?: string;
-  address?: string;
-  affiliatedGym?: string;
-  medicalConditions?: string;
-  allergies?: string;
-  membershipNumber?: string;
-  createdAt: Date;
-}
+  const normalised = items
+    .map((item) => {
+      if (!item) {
+        return '';
+      }
 
-export interface AuthUser {
-  uid: string;
-  email: string;
-  displayName: string;
-}
+      if (typeof item === 'string') {
+        return item;
+      }
 
-// Mock data store (in real app, this would be handled by the backend)
-const mockUsers: Record<string, UserProfile> = {};
+      if (Array.isArray(item)) {
+        return item.filter(Boolean).join(', ');
+      }
 
-// Helper to simulate API delay
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+      if (typeof item === 'object') {
+        const preferredKeys = [
+          'value',
+          'name',
+          'relationship',
+          'phone',
+          'email',
+          'line1',
+          'line2',
+          'city',
+          'county',
+          'postcode',
+          'country',
+        ];
 
+        const preferredValues = preferredKeys
+          .map((key) => (item as any)[key])
+          .filter((value) => typeof value === 'string' && value.trim().length > 0);
 
-class ApiService {
-  // Auth endpoints
-  async login(email: string, password: string): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
+        if (preferredValues.length > 0) {
+          return preferredValues.join(', ');
+        }
+
+        const fallbackValues = Object.values(item)
+          .filter((value) => typeof value === 'string' && value.trim().length > 0);
+
+        if (fallbackValues.length > 0) {
+          return fallbackValues.join(', ');
+        }
+
+        return JSON.stringify(item);
+      }
+
+      return String(item);
+    })
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  return normalised.length > 0 ? normalised : undefined;
+};
+
+const formatAddressesForRequest = (addresses?: string[]): Address[] | undefined => {
+  if (addresses === undefined) {
+    return undefined;
+  }
+
+  if (addresses.length === 0) {
+    return [];
+  }
+
+  return addresses.map((address, index) => ({
+    value: address,
+    isDefault: index === 0,
+  }));
+};
+
+const formatContactsForRequest = (contacts?: string[]): EmergencyContact[] | undefined => {
+  if (contacts === undefined) {
+    return undefined;
+  }
+
+  if (contacts.length === 0) {
+    return [];
+  }
+
+  return contacts.map((contact) => ({ value: contact }));
+};
+
+// Helper to determine user type from scopes
+const getUserTypeFromScopes = (scopes: string[]): 'fighter' | 'medic' => {
+  // Look for personalise:role:medic (which uses coach endpoint)
+  if (scopes.some(scope => scope.includes('personalise:role:medic') || scope.includes('personalise:role:coach'))) {
+    return 'medic';
+  }
+  return 'fighter';
+};
+
+// Helper to make authenticated API calls to MTGB API
+const makeAuthenticatedRequest = async <T>(
+  endpoint: string,
+  method: 'GET' | 'PUT' | 'POST' = 'GET',
+  body?: any
+): Promise<ApiResponse<T>> => {
+  try {
+    const bearerToken = await firebaseAuthService.getBearerToken();
+    
+    if (!bearerToken) {
+      return {
+        success: false,
+        error: 'No authentication token available. Please log in.',
+      };
+    }
+
+    const response = await fetch(`${CONFIG.API_BASE_URL}${endpoint}`, {
+      method,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        'Authorization': `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json',
+      },
+      ...(body && { body: JSON.stringify(body) }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
       
-      // Check if we have a profile for this user in our mock store
-      const profile = mockUsers[firebaseUser.uid];
-      if (!profile) {
-        return {
-          success: false,
-          error: 'User profile not found. Please complete registration.'
-        };
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        // Use default error message if JSON parsing fails
       }
 
       return {
-        success: true,
-        data: {
-          user: {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || profile.displayName
-          },
-          profile
-        }
-      };
-    } catch (error: any) {
-      return {
         success: false,
-        error: error.message || 'Login failed'
+        error: errorMessage,
       };
     }
-  }
 
-  async signup(email: string, password: string, userData: Partial<UserProfile>): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
+    const data = await response.json();
+    
+    return {
+      success: true,
+      data,
+    };
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.message || 'Network request failed',
+    };
+  }
+};
+
+// Helper to combine API responses into UserProfile
+const buildUserProfile = (
+  uid: string,
+  token: string,
+  profile: ProfileResponse,
+  pii?: PiiResponse,
+  fighter?: FighterResponse,
+  coach?: CoachResponse
+): UserProfile => {
+  const userType = getUserTypeFromScopes(profile.scopes);
+  const roleResponse = userType === 'medic' ? coach : fighter;
+
+  return {
+    // Firebase data
+    uid,
+    firebaseToken: token,
+    
+    // Profile data
+    profileId: profile.profileId,
+    memberCode: profile.memberCode,
+    name: profile.name,
+    email: profile.email,
+    emailVerified: profile.emailVerified,
+    mobile: profile.mobile,
+    mobileVerified: profile.mobileVerified,
+    scopes: profile.scopes,
+    
+    // Derived
+    userType,
+    
+    // PII data
+    dateOfBirth: pii?.dateOfBirth,
+    biologicalSex: pii?.biologicalSex,
+    addresses: normaliseValueList(pii?.addresses),
+    emergencyContacts: normaliseValueList(pii?.emergencyContacts),
+    
+    // Role data
+    status: roleResponse?.status,
+    
+    // Internal
+    createdAt: new Date(),
+  };
+};
+
+class ApiService {
+  /**
+   * Authenticate with Firebase and get bearer token
+   */
+  async login(email?: string, password?: string): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
+    if (CONFIG.USE_MOCK_API) {
+      return await mockDataService.login(email || '', password || '');
+    }
+
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const firebaseUser = userCredential.user;
+      // Step 1: Authenticate with Firebase REST API
+      const authResponse = await firebaseAuthService.signInWithEmailAndPassword(email, password);
+      
+      if (!authResponse.success || !authResponse.data) {
+        return {
+          success: false,
+          error: authResponse.error || 'Firebase authentication failed',
+        };
+      }
 
-      // Create user profile in mock store (in real app, this would be saved to backend)
-      const userProfile: UserProfile = {
-        uid: firebaseUser.uid,
-        email: firebaseUser.email || '',
-        displayName: userData.displayName || '',
-        userType: userData.userType || 'athlete',
-        phone: userData.phone || '',
-        dateOfBirth: userData.dateOfBirth,
-        emergencyContact: userData.emergencyContact,
-        address: userData.address,
-        affiliatedGym: userData.affiliatedGym,
-        medicalConditions: userData.medicalConditions,
-        allergies: userData.allergies,
-        membershipNumber: `MTG${Date.now()}`,
-        createdAt: new Date()
+      const { uid, email: userEmail } = authResponse.data;
+
+      // Step 2: Get user profile from MTGB API
+      const profileResponse = await this.getUserProfile();
+      
+      if (!profileResponse.success || !profileResponse.data) {
+        return {
+          success: false,
+          error: profileResponse.error || 'Failed to get user profile',
+        };
+      }
+
+      const authUser: AuthUser = {
+        uid,
+        email: userEmail,
+        displayName: profileResponse.data.name || userEmail,
       };
-
-      mockUsers[firebaseUser.uid] = userProfile;
 
       return {
         success: true,
         data: {
-          user: {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email || '',
-            displayName: userProfile.displayName
-          },
-          profile: userProfile
-        }
+          user: authUser,
+          profile: profileResponse.data,
+        },
       };
     } catch (error: any) {
       return {
         success: false,
-        error: error.message || 'Signup failed'
+        error: error.message || 'Login failed',
       };
     }
   }
 
-  async getUserProfile(uid: string): Promise<ApiResponse<UserProfile>> {
-    await delay(500); // Simulate API call
-    
-    const profile = mockUsers[uid];
-    if (!profile) {
+  /**
+   * Get complete user profile (combines multiple API calls)
+   */
+  async getUserProfile(): Promise<ApiResponse<UserProfile>> {
+    if (CONFIG.USE_MOCK_API) {
+      // For mock mode, use a consistent mock UID  
+      return await mockDataService.getProfile('mock-fighter-123');
+    }
+
+    try {
+      // Get bearer token and UID
+      const bearerToken = await firebaseAuthService.getBearerToken();
+      if (!bearerToken) {
+        return {
+          success: false,
+          error: 'Not authenticated',
+        };
+      }
+
+      // Get profile data
+      const profileResponse = await makeAuthenticatedRequest<ProfileResponse>('/profile/me');
+      if (!profileResponse.success || !profileResponse.data) {
+        return {
+          success: false,
+          error: profileResponse.error || 'Failed to get profile',
+        };
+      }
+
+      const profile = profileResponse.data;
+      const userType = getUserTypeFromScopes(profile.scopes);
+
+      // Get PII data
+      const piiResponse = await makeAuthenticatedRequest<PiiResponse>('/profile/me/pii');
+      
+      // Get role-specific data
+      let fighterResponse: ApiResponse<FighterResponse> | null = null;
+      let coachResponse: ApiResponse<CoachResponse> | null = null;
+
+      if (userType === 'fighter') {
+        fighterResponse = await makeAuthenticatedRequest<FighterResponse>('/fighter/me');
+      } else if (userType === 'medic') {
+        coachResponse = await makeAuthenticatedRequest<CoachResponse>('/coach/me');
+      }
+
+      // Extract UID from bearer token or use profile ID
+      const uid = profile.profileId;
+      
+      const userProfile = buildUserProfile(
+        uid,
+        bearerToken,
+        profile,
+        piiResponse.data,
+        fighterResponse?.data,
+        coachResponse?.data
+      );
+
+      return {
+        success: true,
+        data: userProfile,
+      };
+    } catch (error: any) {
       return {
         success: false,
-        error: 'User profile not found'
+        error: error.message || 'Failed to get user profile',
       };
     }
-
-    return {
-      success: true,
-      data: profile
-    };
   }
 
+  /**
+   * Update user profile
+   */
   async updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> {
-    await delay(600); // Simulate API call
-    
-    const profile = mockUsers[uid];
-    if (!profile) {
+    if (CONFIG.USE_MOCK_API) {
+      // For mock, update and then return the complete profile
+      const updateResult = await mockDataService.updateProfile(uid, updates as any);
+      if (updateResult.success) {
+        return await mockDataService.getProfile(uid);
+      }
+      return { success: false, error: 'Failed to update profile' };
+    }
+
+    try {
+      // Update profile basic info
+      if (updates.name || updates.email || updates.mobile) {
+        const profileRequest: UpdateProfileRequest = {
+          name: updates.name || '',
+          ...(updates.email && { email: updates.email }),
+          ...(updates.mobile && { mobile: updates.mobile }),
+        };
+
+        const response = await makeAuthenticatedRequest<ProfileResponse>(
+          '/profile/me',
+          'PUT',
+          profileRequest
+        );
+
+        if (!response.success) {
+          return {
+            success: false,
+            error: response.error || 'Failed to update profile',
+          };
+        }
+      }
+
+      // Update PII if provided
+      if (updates.dateOfBirth || updates.biologicalSex || updates.addresses || updates.emergencyContacts) {
+        const formattedAddresses = formatAddressesForRequest(updates.addresses as string[] | undefined);
+        const formattedContacts = formatContactsForRequest(updates.emergencyContacts as string[] | undefined);
+
+        const piiRequest: UpdatePiiRequest = {
+          ...(updates.dateOfBirth && { dateOfBirth: updates.dateOfBirth }),
+          ...(updates.biologicalSex && { biologicalSex: updates.biologicalSex }),
+          ...(formattedAddresses !== undefined && { addresses: formattedAddresses }),
+          ...(formattedContacts !== undefined && { emergencyContacts: formattedContacts }),
+        };
+
+        const response = await makeAuthenticatedRequest<PiiResponse>(
+          '/profile/me/pii',
+          'PUT',
+          piiRequest
+        );
+
+        if (!response.success) {
+          return {
+            success: false,
+            error: response.error || 'Failed to update personal information',
+          };
+        }
+      }
+
+      // Return updated profile
+      return await this.getUserProfile();
+    } catch (error: any) {
       return {
         success: false,
-        error: 'User profile not found'
+        error: error.message || 'Failed to update user profile',
+      };
+    }
+  }
+
+  /**
+   * Update user personalization/scopes
+   */
+  async updatePersonalization(scopes: string[]): Promise<ApiResponse<ProfileResponse>> {
+    if (CONFIG.USE_MOCK_API) {
+      return await mockDataService.updatePersonalization('mock-fighter-123', scopes);
+    }
+
+    const scopeRequest: UpdateScopeRequest = {
+      scope: scopes,
+    };
+
+    return await makeAuthenticatedRequest<ProfileResponse>(
+      '/profile/me/personalise',
+      'PUT',
+      scopeRequest
+    );
+  }
+
+  /**
+   * Search addresses
+   */
+  async searchAddresses(query: string): Promise<ApiResponse<AddressSuggestionResponse>> {
+    if (CONFIG.USE_MOCK_API) {
+      return await mockDataService.searchAddresses(query);
+    }
+
+    return await makeAuthenticatedRequest<AddressSuggestionResponse>(
+      `/profile/address/search?query=${encodeURIComponent(query)}`
+    );
+  }
+
+  /**
+   * Get address from suggestion
+   */
+  async getAddressFromSuggestion(placeId: string): Promise<ApiResponse<AddressFromSuggestionResponse>> {
+    if (CONFIG.USE_MOCK_API) {
+      return await mockDataService.getAddressFromSuggestion(placeId);
+    }
+
+    return await makeAuthenticatedRequest<AddressFromSuggestionResponse>(
+      `/profile/address/${encodeURIComponent(placeId)}`
+    );
+  }
+
+  /**
+   * Health check
+   */
+  async healthCheck(): Promise<ApiResponse<HealthResponse>> {
+    if (CONFIG.USE_MOCK_API) {
+      return {
+        success: true,
+        data: {},
       };
     }
 
-    const updatedProfile = { ...profile, ...updates };
-    mockUsers[uid] = updatedProfile;
+    // Health check doesn't require authentication
+    try {
+      const response = await fetch(`${CONFIG.API_BASE_URL}/health`);
+      
+      if (!response.ok) {
+        return {
+          success: false,
+          error: `Health check failed: ${response.statusText}`,
+        };
+      }
 
-    return {
-      success: true,
-      data: updatedProfile
-    };
+      const data = await response.json();
+      return {
+        success: true,
+        data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message || 'Health check failed',
+      };
+    }
   }
 
-  // Medical endpoints (for future use)
-  async getMedicalHistory(athleteId: string): Promise<ApiResponse<any[]>> {
-    await delay(400);
-    // Mock implementation - in real app would fetch from backend
-    return {
-      success: true,
-      data: []
-    };
-  }
-
-  async addMedicalEntry(athleteId: string, entry: any): Promise<ApiResponse<any>> {
-    await delay(500);
-    // Mock implementation - in real app would save to backend
-    return {
-      success: true,
-      data: { id: `medical_${Date.now()}`, ...entry }
-    };
-  }
-
-  // QR code endpoints (for future use)
-  async generateQRCode(athleteId: string): Promise<ApiResponse<string>> {
-    await delay(300);
-    // Mock implementation - in real app would generate secure QR code
-    return {
-      success: true,
-      data: `https://api.muaythaigb.org/qr/${athleteId}_${Date.now()}`
-    };
+  /**
+   * Logout
+   */
+  async logout(): Promise<void> {
+    firebaseAuthService.signOut();
   }
 }
 

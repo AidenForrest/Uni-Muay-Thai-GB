@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { apiService, UserProfile, AuthUser } from '../services/api';
+import { apiService } from '../services/api';
+import { UserProfile, AuthUser } from '../types/api.types';
+import { auth } from '../config/firebase';
+import { onAuthStateChanged, User } from 'firebase/auth';
 
 interface AuthContextType {
   currentUser: AuthUser | null;
@@ -7,6 +10,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string, userData: Partial<UserProfile>) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (profile: UserProfile) => void;
   loading: boolean;
 }
 
@@ -26,18 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   async function signup(email: string, password: string, userData: Partial<UserProfile>) {
-    const response = await apiService.signup(email, password, userData);
-    
-    if (!response.success || !response.data) {
-      throw new Error(response.error || 'Failed to create account');
-    }
-
-    setCurrentUser(response.data.user);
-    setUserProfile(response.data.profile);
-    
-    // Store auth info in localStorage for persistence
-    localStorage.setItem('auth_user', JSON.stringify(response.data.user));
-    localStorage.setItem('user_profile', JSON.stringify(response.data.profile));
+    throw new Error('Signup is not available with the production API. Registration is handled manually.');
   }
 
   async function login(email: string, password: string) {
@@ -49,40 +42,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setCurrentUser(response.data.user);
     setUserProfile(response.data.profile);
-    
-    // Store auth info in localStorage for persistence
-    localStorage.setItem('auth_user', JSON.stringify(response.data.user));
-    localStorage.setItem('user_profile', JSON.stringify(response.data.profile));
   }
 
   async function logout() {
-    setCurrentUser(null);
-    setUserProfile(null);
-    
-    // Clear localStorage
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('user_profile');
+    await auth.signOut();
+    // Firebase auth state listener will handle clearing the state
+  }
+
+  function updateUserProfile(profile: UserProfile) {
+    setUserProfile(profile);
   }
 
   useEffect(() => {
-    // Check for existing auth state in localStorage
-    const storedUser = localStorage.getItem('auth_user');
-    const storedProfile = localStorage.getItem('user_profile');
-
-    if (storedUser && storedProfile) {
-      try {
-        const user = JSON.parse(storedUser) as AuthUser;
-        const profile = JSON.parse(storedProfile) as UserProfile;
-        setCurrentUser(user);
-        setUserProfile(profile);
-      } catch (error) {
-        console.error('Failed to parse stored auth data:', error);
-        localStorage.removeItem('auth_user');
-        localStorage.removeItem('user_profile');
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: User | null) => {
+      if (firebaseUser) {
+        // User is signed in, fetch their profile
+        try {
+          const profileResponse = await apiService.getUserProfile();
+          
+          if (profileResponse.success && profileResponse.data) {
+            setCurrentUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: profileResponse.data.name || firebaseUser.email || 'User'
+            });
+            setUserProfile(profileResponse.data);
+          } else {
+            // Firebase user exists but no profile - sign them out
+            await auth.signOut();
+            setCurrentUser(null);
+            setUserProfile(null);
+          }
+        } catch (error) {
+          console.error('Failed to load user profile:', error);
+          await auth.signOut();
+          setCurrentUser(null);
+          setUserProfile(null);
+        }
+      } else {
+        // User is signed out
+        setCurrentUser(null);
+        setUserProfile(null);
       }
-    }
+      
+      setLoading(false);
+    });
 
-    setLoading(false);
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
 
   const value = {
@@ -91,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     login,
     signup,
     logout,
+    updateUserProfile,
     loading
   };
 

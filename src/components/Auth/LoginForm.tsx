@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { CONFIG } from '../../config/features';
 
 export default function LoginForm() {
   const { login } = useAuth();
@@ -43,6 +44,18 @@ export default function LoginForm() {
         </div>
 
         {error && <div className="error-message">{error}</div>}
+
+        {!CONFIG.USE_MOCK_API && process.env.NODE_ENV === 'development' && (
+          <div className="info-box">
+            <h3>Test Credentials</h3>
+            <p>Please replace the placeholders in the Firebase auth service with your provided test credentials:</p>
+            <ul>
+              <li><strong>Email:</strong> YOUR_TEST_EMAIL@example.com</li>
+              <li><strong>Password:</strong> YOUR_TEST_PASSWORD</li>
+            </ul>
+            <p><small>The API uses Firebase REST API key: {CONFIG.FIREBASE_AUTH_API_KEY}</small></p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">

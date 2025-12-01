@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import AccountSettings from './pages/AccountSettings';
 import LoginForm from './components/Auth/LoginForm';
 import SignupForm from './components/Auth/SignupForm';
+import MedicalPass from './pages/MedicalPass';
 import './styles/App.css';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -49,6 +50,7 @@ function App() {
                 <AccountSettings />
               </ProtectedRoute>
             } />
+            <Route path="/medical/:profileId" element={<MedicalPass />} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </div>

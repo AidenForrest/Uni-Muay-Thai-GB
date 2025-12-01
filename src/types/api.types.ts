@@ -7,11 +7,6 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
-// Health Response
-export interface HealthResponse {
-  // Empty object per swagger spec
-}
-
 // Address Types (per swagger spec - empty schema)
 export interface Address {
   value?: string;
@@ -59,26 +54,9 @@ export interface FighterResponse {
   status: string; // 'active' | 'inactive' | 'pending' | 'retired' | 'suspended'
 }
 
-export interface UpdateFighterRequest {
-  // Empty object per swagger spec
-}
-
 // Coach Types (per swagger spec - this is what medics use)
 export interface CoachResponse {
   status: string; // 'active' | 'inactive' | 'pending' | 'retired' | 'suspended'
-}
-
-export interface UpdateCoachRequest {
-  // Empty object per swagger spec
-}
-
-// Address Search Types (per swagger spec)
-export interface AddressSuggestionResponse {
-  // Empty object per swagger spec
-}
-
-export interface AddressFromSuggestionResponse {
-  // Empty object per swagger spec
 }
 
 // PII Types (Personal Identifiable Information - separate endpoint)
@@ -99,6 +77,48 @@ export interface UpdatePiiRequest {
 // Personalization Types
 export interface UpdateScopeRequest {
   scope: string[];
+}
+
+// Medical Types (mock/demo only)
+export type MedicalEntryType =
+  | 'pre_fight_check'
+  | 'injury_assessment'
+  | 'medical_clearance'
+  | 'suspension_issued'
+  | 'suspension_cleared'
+  | 'note';
+
+export interface MedicalEntry {
+  id: string;
+  entryType: MedicalEntryType;
+  notes: string;
+  medicName: string;
+  medicId: string;
+  createdAt: string; // ISO datetime
+}
+
+export interface Suspension {
+  active: boolean;
+  reason: string;
+  startDate: string;
+  endDate?: string;
+  issuedBy: string;
+  notes?: string;
+}
+
+export interface MedicalPassResponse {
+  profile: ProfileResponse;
+  pii: PiiResponse;
+  status?: string;
+  history: MedicalEntry[];
+  suspension?: Suspension;
+}
+
+export interface AddMedicalEntryRequest {
+  entryType: MedicalEntryType;
+  notes: string;
+  medicName?: string;
+  medicId?: string;
 }
 
 // Firebase REST API Auth Types

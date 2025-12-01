@@ -1,18 +1,20 @@
-// Mock data service for Muay Thai GB API endpoints
-// Production-ready mock implementation matching Swagger specification exactly
+// Mock data service for demo/medic features only
+// Used for: medic login (email contains 'medic' or 'doctor'), medical pass, medical entries, suspensions
+// Fighter features use the real API - these mocks are only for features not yet implemented in backend
 
-import { 
-  ApiResponse, 
-  ProfileResponse, 
+import {
+  ApiResponse,
+  ProfileResponse,
   FighterResponse,
   CoachResponse,
   PiiResponse,
   UpdateProfileRequest,
-  AddressSuggestionResponse,
-  AddressFromSuggestionResponse,
-  HealthResponse,
   UserProfile,
-  AuthUser
+  AuthUser,
+  MedicalEntry,
+  Suspension,
+  MedicalPassResponse,
+  AddMedicalEntryRequest
 } from '../types/api.types';
 import { CONFIG } from '../config/features';
 
@@ -141,6 +143,47 @@ const MOCK_MEDIC_PII: PiiResponse = {
   ]
 };
 
+// Medical history and suspensions (in-memory, demo only)
+const medicalHistoryByFighter: Record<string, MedicalEntry[]> = {
+  'mock-fighter-123': [
+    {
+      id: 'entry-001',
+      entryType: 'pre_fight_check',
+      notes: 'Vitals normal. Cleared for competition.',
+      medicName: 'Dr. Test Medic',
+      medicId: 'mock-medic-456',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString(),
+    },
+    {
+      id: 'entry-002',
+      entryType: 'injury_assessment',
+      notes: 'Right shin bruise, no fracture suspected. Advised icing and light training.',
+      medicName: 'Dr. Test Medic',
+      medicId: 'mock-medic-456',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(),
+    },
+    {
+      id: 'entry-003',
+      entryType: 'medical_clearance',
+      notes: 'Follow-up complete. Cleared for full training.',
+      medicName: 'Dr. Test Medic',
+      medicId: 'mock-medic-456',
+      createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
+    },
+  ],
+};
+
+const suspensionByFighter: Record<string, Suspension | undefined> = {
+  'mock-fighter-123': {
+    active: false,
+    reason: 'Previous mild concussion - cleared',
+    startDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 21).toISOString(),
+    endDate: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
+    issuedBy: 'Dr. Test Medic',
+    notes: 'Cleared after follow-up exam.',
+  },
+};
+
 // Helper to build complete UserProfile from API responses
 const buildUserProfile = (
   profile: ProfileResponse,
@@ -182,6 +225,52 @@ const buildUserProfile = (
 };
 
 export class MockDataService {
+  private getFighterRecord(profileId: string) {
+    const isKnown = profileId === MOCK_FIGHTER_PROFILE.profileId;
+    const profile: ProfileResponse = isKnown
+      ? MOCK_FIGHTER_PROFILE
+      : {
+          ...MOCK_FIGHTER_PROFILE,
+          profileId,
+          memberCode: `MTG-${profileId.slice(-4)}`.toUpperCase(),
+          name: `Demo Fighter ${profileId.slice(-4)}`,
+        };
+
+    const pii: PiiResponse = isKnown
+      ? MOCK_FIGHTER_PII
+      : {
+          dateOfBirth: '1995-01-01',
+          biologicalSex: 'female',
+          addresses: [
+            {
+              value: '100 Demo Street, London, SW1A 1AA, United Kingdom',
+              isDefault: true,
+            },
+          ],
+          emergencyContacts: [
+            {
+              value: 'Demo Contact: +441234567890',
+              isPrimary: true,
+            },
+          ],
+        };
+
+    const roleStatus = MOCK_FIGHTER_DATA.status;
+    return { profile, pii, roleStatus };
+  }
+
+  private getHistory(profileId: string) {
+    if (!medicalHistoryByFighter[profileId]) {
+      medicalHistoryByFighter[profileId] = [];
+    }
+    return medicalHistoryByFighter[profileId];
+  }
+
+  private upsertSuspension(profileId: string, suspension?: Suspension) {
+    suspensionByFighter[profileId] = suspension;
+    return suspensionByFighter[profileId];
+  }
+
   // Authentication
   async login(email: string, password: string): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
     await delay();
@@ -220,95 +309,55 @@ export class MockDataService {
     };
   }
 
-  async updateProfile(uid: string, request: UpdateProfileRequest): Promise<ApiResponse<ProfileResponse>> {
+  // Medical endpoints (mock-only)
+  async getMedicalPass(profileId: string): Promise<ApiResponse<MedicalPassResponse>> {
     await delay();
-    
-    const isMedic = uid.includes('medic') || uid.includes('doctor');
-    const baseProfile = isMedic ? MOCK_MEDIC_PROFILE : MOCK_FIGHTER_PROFILE;
-    
+
+    const { profile, pii, roleStatus } = this.getFighterRecord(profileId);
+    const history = this.getHistory(profileId);
+    const suspension = suspensionByFighter[profileId];
+
     return {
       success: true,
       data: {
-        ...baseProfile,
-        profileId: uid,
-        name: request.name,
-        email: request.email || baseProfile.email,
-        mobile: request.mobile || baseProfile.mobile
-      }
+        profile,
+        pii,
+        status: roleStatus,
+        history: [...history].sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        ),
+        suspension,
+      },
     };
   }
 
-  // Fighter endpoints
-  async getFighter(uid: string): Promise<ApiResponse<FighterResponse>> {
+  async addMedicalEntry(
+    profileId: string,
+    request: AddMedicalEntryRequest
+  ): Promise<ApiResponse<MedicalPassResponse>> {
     await delay();
-    return { success: true, data: MOCK_FIGHTER_DATA };
-  }
 
-  async updateFighter(uid: string): Promise<ApiResponse<FighterResponse>> {
-    await delay();
-    return { success: true, data: MOCK_FIGHTER_DATA };
-  }
-
-  // Coach endpoints
-  async getCoach(uid: string): Promise<ApiResponse<CoachResponse>> {
-    await delay();
-    return { success: true, data: MOCK_COACH_DATA };
-  }
-
-  async updateCoach(uid: string): Promise<ApiResponse<CoachResponse>> {
-    await delay();
-    return { success: true, data: MOCK_COACH_DATA };
-  }
-
-  // PII endpoints
-  async getPii(uid: string): Promise<ApiResponse<PiiResponse>> {
-    await delay();
-    
-    const isMedic = uid.includes('medic') || uid.includes('doctor');
-    return {
-      success: true,
-      data: isMedic ? MOCK_MEDIC_PII : MOCK_FIGHTER_PII
+    const history = this.getHistory(profileId);
+    const entry: MedicalEntry = {
+      id: `entry-${history.length + 1}-${Date.now()}`,
+      entryType: request.entryType,
+      notes: request.notes,
+      medicName: request.medicName || 'Demo Medic',
+      medicId: request.medicId || MOCK_MEDIC_PROFILE.profileId,
+      createdAt: new Date().toISOString(),
     };
+
+    history.push(entry);
+    return this.getMedicalPass(profileId);
   }
 
-  async updatePii(uid: string): Promise<ApiResponse<PiiResponse>> {
+  async setSuspension(
+    profileId: string,
+    suspension: Suspension | undefined
+  ): Promise<ApiResponse<MedicalPassResponse>> {
     await delay();
-    
-    const isMedic = uid.includes('medic') || uid.includes('doctor');
-    return {
-      success: true,
-      data: isMedic ? MOCK_MEDIC_PII : MOCK_FIGHTER_PII
-    };
-  }
-
-  // Address endpoints (return empty objects per Swagger spec)
-  async searchAddresses(query: string): Promise<ApiResponse<AddressSuggestionResponse>> {
-    await delay();
-    return { success: true, data: {} };
-  }
-
-  async getAddressFromSuggestion(placeId: string): Promise<ApiResponse<AddressFromSuggestionResponse>> {
-    await delay();
-    return { success: true, data: {} };
-  }
-
-  // Personalization endpoints
-  async updatePersonalization(uid: string, scopes: string[]): Promise<ApiResponse<ProfileResponse>> {
-    await delay();
-
-    const isMedic = scopes.includes('personalise:role:medic');
-    const baseProfile = isMedic ? MOCK_MEDIC_PROFILE : MOCK_FIGHTER_PROFILE;
-
-    return {
-      success: true,
-      data: { ...baseProfile, profileId: uid, scopes }
-    };
-  }
-
-  // Health endpoint
-  async getHealth(): Promise<ApiResponse<HealthResponse>> {
-    await delay();
-    return { success: true, data: {} };
+    this.upsertSuspension(profileId, suspension);
+    return this.getMedicalPass(profileId);
   }
 }
 

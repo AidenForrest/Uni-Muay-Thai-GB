@@ -13,19 +13,13 @@ export class FirebaseAuthService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private tokenExpiresAt: number | null = null;
-  
-  // Production credentials
-  private readonly credentials = {
-    email: 'uniaiden626@gmail.com',
-    password: 'nl873*yofm!9uh',
-  };
 
   /**
    * Sign in using Firebase REST API and exchange for access token
    */
   async signInWithEmailAndPassword(
-    email: string = this.credentials.email, 
-    password: string = this.credentials.password
+    email: string,
+    password: string
   ): Promise<ApiResponse<{ token: string; uid: string; email: string }>> {
     try {
       // Step 1: Sign in with Firebase to get refresh token
@@ -94,26 +88,12 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Check if user is authenticated
-   */
-  isAuthenticated(): boolean {
-    return this.accessToken !== null && this.refreshToken !== null;
-  }
-
-  /**
    * Sign out - clear stored tokens
    */
   signOut(): void {
     this.accessToken = null;
     this.refreshToken = null;
     this.tokenExpiresAt = null;
-  }
-
-  /**
-   * Get configured credentials
-   */
-  getCredentials() {
-    return this.credentials;
   }
 
   /**

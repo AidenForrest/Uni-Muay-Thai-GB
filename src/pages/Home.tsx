@@ -45,14 +45,19 @@ export default function Home() {
           <h2>Why Choose Muay Thai GB?</h2>
           <div className="features-grid">
             <div className="feature-card">
-              <div className="feature-icon">🥊</div>
-              <h3>Example Card</h3>
-              <p>Some more info would go here.</p>
+              <div className="feature-icon">🏥</div>
+              <h3>Digital Medical Pass</h3>
+              <p>Secure QR code-based medical records ensuring athlete safety at every event.</p>
             </div>
             <div className="feature-card">
-              <div className="feature-icon">📊</div>
-              <h3>Second point</h3>
-              <p>More info would go here.</p>
+              <div className="feature-icon">📱</div>
+              <h3>Instant Verification</h3>
+              <p>Medics can instantly access and update fighter medical history with a simple scan.</p>
+            </div>
+            <div className="feature-card">
+              <div className="feature-icon">🛡️</div>
+              <h3>Athlete Safety</h3>
+              <p>Automatic suspension management protects fighters and ensures compliance.</p>
             </div>
           </div>
         </div>
@@ -74,7 +79,7 @@ export default function Home() {
           <div className="footer-content">
             <div className="footer-section">
               <h4>Muay Thai GB</h4>
-              <p>Lorem Ipsum</p>
+              <p>The national governing body for Muay Thai in Great Britain, dedicated to athlete safety and sport development.</p>
             </div>
             <div className="footer-section">
               <h4>Quick Links</h4>
@@ -85,8 +90,8 @@ export default function Home() {
             </div>
             <div className="footer-section">
               <h4>Contact</h4>
-              <p>info@muaythaiGB.co.uk</p>
-              <p>+44 20 1234 5678</p>
+              <p>enquiries@muaythaigb.org</p>
+              <p>muaythaigb.org</p>
             </div>
           </div>
           <div className="footer-bottom">

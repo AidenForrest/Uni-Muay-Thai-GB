@@ -94,8 +94,8 @@ export default function AccountSettings() {
     try {
       await logout();
       navigate('/');
-    } catch (error) {
-      console.error('Failed to log out');
+    } catch {
+      // Silent fail - user can retry
     }
   };
 

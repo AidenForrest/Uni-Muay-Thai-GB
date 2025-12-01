@@ -1,6 +1,3 @@
-// API Service matching Swagger specification exactly
-// Uses Firebase REST API for auth, then MTGB API with bearer token
-
 import { firebaseAuthService } from './firebaseAuth';
 import { mockDataService } from './mockData';
 import { CONFIG } from '../config/features';
@@ -15,11 +12,11 @@ import {
   UpdateProfileRequest,
   UpdatePiiRequest,
   UpdateScopeRequest,
-  AddressSuggestionResponse,
-  AddressFromSuggestionResponse,
-  HealthResponse,
   Address,
   EmergencyContact,
+  MedicalPassResponse,
+  AddMedicalEntryRequest,
+  Suspension
 } from '../types/api.types';
 
 const normaliseValueList = (
@@ -226,8 +223,18 @@ class ApiService {
    * Authenticate with Firebase and get bearer token
    */
   async login(email?: string, password?: string): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
-    if (CONFIG.USE_MOCK_API) {
+    // Medic demo login (mock) - for demo purposes only
+    const emailLower = (email || '').toLowerCase();
+    if (emailLower.includes('medic') || emailLower.includes('doctor')) {
       return await mockDataService.login(email || '', password || '');
+    }
+
+    // Real API login for fighters
+    if (!email || !password) {
+      return {
+        success: false,
+        error: 'Email and password are required',
+      };
     }
 
     try {
@@ -278,11 +285,6 @@ class ApiService {
    * Get complete user profile (combines multiple API calls)
    */
   async getUserProfile(): Promise<ApiResponse<UserProfile>> {
-    if (CONFIG.USE_MOCK_API) {
-      // For mock mode, use a consistent mock UID  
-      return await mockDataService.getProfile('mock-fighter-123');
-    }
-
     try {
       // Get bearer token and UID
       const bearerToken = await firebaseAuthService.getBearerToken();
@@ -346,15 +348,6 @@ class ApiService {
    * Update user profile
    */
   async updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> {
-    if (CONFIG.USE_MOCK_API) {
-      // For mock, update and then return the complete profile
-      const updateResult = await mockDataService.updateProfile(uid, updates as any);
-      if (updateResult.success) {
-        return await mockDataService.getProfile(uid);
-      }
-      return { success: false, error: 'Failed to update profile' };
-    }
-
     try {
       // Update profile basic info
       if (updates.name || updates.email || updates.mobile) {
@@ -418,10 +411,6 @@ class ApiService {
    * Update user personalization/scopes
    */
   async updatePersonalization(scopes: string[]): Promise<ApiResponse<ProfileResponse>> {
-    if (CONFIG.USE_MOCK_API) {
-      return await mockDataService.updatePersonalization('mock-fighter-123', scopes);
-    }
-
     const scopeRequest: UpdateScopeRequest = {
       scope: scopes,
     };
@@ -434,64 +423,24 @@ class ApiService {
   }
 
   /**
-   * Search addresses
+   * Medical pass and history (mock/demo - backend not yet implemented)
    */
-  async searchAddresses(query: string): Promise<ApiResponse<AddressSuggestionResponse>> {
-    if (CONFIG.USE_MOCK_API) {
-      return await mockDataService.searchAddresses(query);
-    }
-
-    return await makeAuthenticatedRequest<AddressSuggestionResponse>(
-      `/profile/address/search?query=${encodeURIComponent(query)}`
-    );
+  async getMedicalPass(profileId: string): Promise<ApiResponse<MedicalPassResponse>> {
+    return await mockDataService.getMedicalPass(profileId);
   }
 
-  /**
-   * Get address from suggestion
-   */
-  async getAddressFromSuggestion(placeId: string): Promise<ApiResponse<AddressFromSuggestionResponse>> {
-    if (CONFIG.USE_MOCK_API) {
-      return await mockDataService.getAddressFromSuggestion(placeId);
-    }
-
-    return await makeAuthenticatedRequest<AddressFromSuggestionResponse>(
-      `/profile/address/${encodeURIComponent(placeId)}`
-    );
+  async addMedicalEntry(
+    profileId: string,
+    request: AddMedicalEntryRequest
+  ): Promise<ApiResponse<MedicalPassResponse>> {
+    return await mockDataService.addMedicalEntry(profileId, request);
   }
 
-  /**
-   * Health check
-   */
-  async healthCheck(): Promise<ApiResponse<HealthResponse>> {
-    if (CONFIG.USE_MOCK_API) {
-      return {
-        success: true,
-        data: {},
-      };
-    }
-
-    // Health check doesn't require authentication
-    try {
-      const response = await fetch(`${CONFIG.API_BASE_URL}/health`);
-      
-      if (!response.ok) {
-        return {
-          success: false,
-          error: `Health check failed: ${response.statusText}`,
-        };
-      }
-
-      const data = await response.json();
-      return {
-        success: true,
-        data,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        error: error.message || 'Health check failed',
-      };
-    }
+  async setSuspension(
+    profileId: string,
+    suspension: Suspension | undefined
+  ): Promise<ApiResponse<MedicalPassResponse>> {
+    return await mockDataService.setSuspension(profileId, suspension);
   }
 
   /**

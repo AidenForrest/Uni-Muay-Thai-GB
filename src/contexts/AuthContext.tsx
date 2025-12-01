@@ -78,8 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setCurrentUser(null);
             setUserProfile(null);
           }
-        } catch (error) {
-          console.error('Failed to load user profile:', error);
+        } catch {
           await auth.signOut();
           setCurrentUser(null);
           setUserProfile(null);

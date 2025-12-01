@@ -1,18 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import AthleteQRCode from '../components/QRCode/AthleteQRCode';
+import { apiService } from '../services/api';
+import { MedicalEntry, MedicalPassResponse, Suspension } from '../types/api.types';
 
 export default function Dashboard() {
   const { userProfile, logout } = useAuth();
   const navigate = useNavigate();
+  const [medicTargetId, setMedicTargetId] = useState('');
+  const [medicData, setMedicData] = useState<MedicalPassResponse | null>(null);
+  const [medicLoading, setMedicLoading] = useState(false);
+  const [medicError, setMedicError] = useState<string | null>(null);
+  const [entryNotes, setEntryNotes] = useState('');
+  const [entryType, setEntryType] = useState<MedicalEntry['entryType']>('pre_fight_check');
+  const [suspensionReason, setSuspensionReason] = useState('Medical suspension for observation');
+  const [suspensionDays, setSuspensionDays] = useState(7);
 
   const handleLogout = async () => {
     try {
       await logout();
       navigate('/');
-    } catch (error) {
-      console.error('Failed to log out');
+    } catch {
+      // Silent fail - user can retry
     }
   };
 
@@ -23,6 +33,61 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  const loadMedicRecord = async () => {
+    if (!medicTargetId) return;
+    setMedicLoading(true);
+    setMedicError(null);
+    const response = await apiService.getMedicalPass(medicTargetId.trim());
+    if (response.success && response.data) {
+      setMedicData(response.data);
+    } else {
+      setMedicError(response.error || 'Unable to load record');
+    }
+    setMedicLoading(false);
+  };
+
+  const addEntry = async () => {
+    if (!medicTargetId || !entryNotes) return;
+    setMedicLoading(true);
+    const response = await apiService.addMedicalEntry(medicTargetId.trim(), {
+      entryType,
+      notes: entryNotes,
+      medicName: userProfile?.name,
+      medicId: userProfile?.profileId,
+    });
+    if (response.success && response.data) {
+      setMedicData(response.data);
+      setEntryNotes('');
+    } else {
+      setMedicError(response.error || 'Unable to add entry');
+    }
+    setMedicLoading(false);
+  };
+
+  const setSuspension = async (clear = false) => {
+    if (!medicTargetId) return;
+    setMedicLoading(true);
+
+    const suspension: Suspension | undefined = clear
+      ? undefined
+      : {
+          active: true,
+          reason: suspensionReason || 'Medical suspension',
+          startDate: new Date().toISOString(),
+          endDate: new Date(Date.now() + suspensionDays * 24 * 60 * 60 * 1000).toISOString(),
+          issuedBy: userProfile?.name || 'Demo Medic',
+          notes: 'Issued via demo panel',
+        };
+
+    const response = await apiService.setSuspension(medicTargetId.trim(), suspension);
+    if (response.success && response.data) {
+      setMedicData(response.data);
+    } else {
+      setMedicError(response.error || 'Unable to update suspension');
+    }
+    setMedicLoading(false);
+  };
 
   return (
     <div className="dashboard-container">
@@ -148,18 +213,252 @@ export default function Dashboard() {
 
         <div className="dashboard-card">
             <div className="card-icon">📈</div>
-            <h3>More features</h3>
-            <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+            <h3>Events & Competitions</h3>
+            <p>Register for upcoming events, view competition schedules, and track your fight record.</p>
             <button className="card-button" disabled>
                 Coming Soon
             </button>
         </div>
         </div>
 
+        {userProfile.userType === 'medic' && (
+          <div className="medic-portal">
+            <div className="medic-portal-header">
+              <div className="medic-portal-icon">+</div>
+              <div className="medic-portal-title">
+                <h2>Medical Portal</h2>
+                <p>Search for a fighter, review their medical history, and manage their records</p>
+              </div>
+            </div>
+
+            {/* Step 1: Fighter Search */}
+            <div className="medic-section">
+              <div className="medic-section-header">
+                <span className="medic-step">1</span>
+                <h3>Find Fighter</h3>
+              </div>
+              <div className="medic-search-box">
+                <div className="medic-search-input-wrapper">
+                  <input
+                    type="text"
+                    value={medicTargetId}
+                    onChange={(e) => setMedicTargetId(e.target.value)}
+                    placeholder="Enter fighter's profile ID (e.g., mock-fighter-123)"
+                    className="medic-search-input"
+                  />
+                </div>
+                <button
+                  className="medic-search-btn"
+                  onClick={loadMedicRecord}
+                  disabled={medicLoading || !medicTargetId.trim()}
+                >
+                  {medicLoading ? (
+                    <>
+                      <span className="spinner"></span>
+                      Searching...
+                    </>
+                  ) : (
+                    'Search Fighter'
+                  )}
+                </button>
+              </div>
+              {medicError && (
+                <div className="medic-error">
+                  {medicError}
+                </div>
+              )}
+            </div>
+
+            {/* Step 2: Fighter Profile Card */}
+            {medicData && (
+              <>
+                <div className="medic-section">
+                  <div className="medic-section-header">
+                    <span className="medic-step">2</span>
+                    <h3>Fighter Profile</h3>
+                  </div>
+                  <div className="fighter-profile-card">
+                    <div className="fighter-profile-main">
+                      <div className="fighter-avatar">
+                        {medicData.profile.name?.charAt(0).toUpperCase() || 'F'}
+                      </div>
+                      <div className="fighter-info">
+                        <h4>{medicData.profile.name}</h4>
+                        <p className="fighter-member-code">Member #{medicData.profile.memberCode}</p>
+                        <p className="fighter-id">ID: {medicData.profile.profileId}</p>
+                      </div>
+                      <div className={`fighter-status ${medicData.suspension?.active ? 'status-suspended' : 'status-cleared'}`}>
+                        <span className="status-text">{medicData.suspension?.active ? 'SUSPENDED' : 'CLEARED'}</span>
+                      </div>
+                    </div>
+                    {medicData.suspension?.active && (
+                      <div className="suspension-details">
+                        <p><strong>Reason:</strong> {medicData.suspension.reason}</p>
+                        <p><strong>Until:</strong> {medicData.suspension.endDate ? new Date(medicData.suspension.endDate).toLocaleDateString() : 'Indefinite'}</p>
+                        <p><strong>Issued by:</strong> {medicData.suspension.issuedBy}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Step 3: Actions */}
+                <div className="medic-section">
+                  <div className="medic-section-header">
+                    <span className="medic-step">3</span>
+                    <h3>Take Action</h3>
+                  </div>
+
+                  <div className="medic-action-cards">
+                    {/* Add Medical Entry Card */}
+                    <div className="medic-action-card">
+                      <div className="action-card-header">
+                        <h4>Add Medical Entry</h4>
+                      </div>
+                      <p className="action-description">Record a medical observation, assessment, or clearance</p>
+
+                      <div className="action-form">
+                        <div className="form-field">
+                          <label>Entry Type</label>
+                          <select
+                            value={entryType}
+                            onChange={(e) => setEntryType(e.target.value as MedicalEntry['entryType'])}
+                            className="medic-select"
+                          >
+                            <option value="pre_fight_check">Pre-fight Check</option>
+                            <option value="injury_assessment">Injury Assessment</option>
+                            <option value="medical_clearance">Medical Clearance</option>
+                            <option value="suspension_issued">Suspension Issued</option>
+                            <option value="suspension_cleared">Suspension Cleared</option>
+                            <option value="note">General Note</option>
+                          </select>
+                        </div>
+
+                        <div className="form-field">
+                          <label>Notes</label>
+                          <textarea
+                            value={entryNotes}
+                            onChange={(e) => setEntryNotes(e.target.value)}
+                            placeholder="Enter your medical notes here..."
+                            rows={4}
+                            className="medic-textarea"
+                          />
+                        </div>
+
+                        <button
+                          className="action-btn action-btn-primary"
+                          onClick={addEntry}
+                          disabled={medicLoading || !entryNotes.trim()}
+                        >
+                          {medicLoading ? 'Adding...' : 'Add Entry'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Manage Suspension Card */}
+                    <div className="medic-action-card">
+                      <div className="action-card-header">
+                        <h4>Manage Suspension</h4>
+                      </div>
+                      <p className="action-description">Issue or clear a medical suspension for this fighter</p>
+
+                      <div className="action-form">
+                        <div className="form-field">
+                          <label>Suspension Reason</label>
+                          <input
+                            type="text"
+                            value={suspensionReason}
+                            onChange={(e) => setSuspensionReason(e.target.value)}
+                            placeholder="e.g., Concussion protocol"
+                            className="medic-input"
+                          />
+                        </div>
+
+                        <div className="form-field">
+                          <label>Duration (days)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={suspensionDays}
+                            onChange={(e) => setSuspensionDays(Number(e.target.value))}
+                            className="medic-input"
+                          />
+                        </div>
+
+                        <div className="suspension-btn-group">
+                          <button
+                            className="action-btn action-btn-danger"
+                            onClick={() => setSuspension(false)}
+                            disabled={medicLoading || !suspensionReason.trim()}
+                          >
+                            {medicLoading ? 'Processing...' : 'Issue Suspension'}
+                          </button>
+                          <button
+                            className="action-btn action-btn-success"
+                            onClick={() => setSuspension(true)}
+                            disabled={medicLoading || !medicData.suspension?.active}
+                          >
+                            Clear Suspension
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 4: Medical History */}
+                <div className="medic-section">
+                  <div className="medic-section-header">
+                    <span className="medic-step">4</span>
+                    <h3>Medical History</h3>
+                    <span className="history-count">{medicData.history.length} entries</span>
+                  </div>
+
+                  {medicData.history.length === 0 ? (
+                    <div className="empty-history">
+                      <p>No medical entries recorded yet</p>
+                    </div>
+                  ) : (
+                    <div className="medical-timeline">
+                      {medicData.history.map((entry, index) => (
+                        <div key={entry.id} className="timeline-entry">
+                          <div className="timeline-marker">
+                            <span className="timeline-dot"></span>
+                            {index < medicData.history.length - 1 && <span className="timeline-line"></span>}
+                          </div>
+                          <div className="timeline-content">
+                            <div className="timeline-header">
+                              <span className={`entry-type-badge entry-type-${entry.entryType.replace(/_/g, '-')}`}>
+                                {entry.entryType.replace(/_/g, ' ')}
+                              </span>
+                              <span className="timeline-date">
+                                {new Date(entry.createdAt).toLocaleDateString('en-GB', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                            <p className="timeline-notes">{entry.notes}</p>
+                            <p className="timeline-medic">Recorded by {entry.medicName}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+          </div>
+        )}
+
         <div className="welcome-message">
-          <h2>Welcome to Muay Thai GB! 🥊</h2>
+          <h2>About Muay Thai GB</h2>
           <p>
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+            Muay Thai GB is dedicated to advancing the sport of Muay Thai across Great Britain. Our digital medical pass system ensures athlete safety by providing secure, QR code-based medical records that can be instantly verified at any event. We're committed to providing a governing body fully representative of the whole Muay Thai community, raising participation, and becoming the recognized National Governing Body for Muay Thai in the UK.
           </p>
         </div>
 

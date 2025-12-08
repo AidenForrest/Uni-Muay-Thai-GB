@@ -1,3 +1,17 @@
+/**
+ * API Service - Main orchestration layer for MTGB API
+ *
+ * This service combines Firebase authentication with the MTGB backend API.
+ * It handles:
+ * - User authentication (Firebase REST API + MTGB profile fetching)
+ * - Profile management (personal info, PII, role-specific data)
+ * - Medical pass operations (currently using mock data)
+ *
+ * The service supports two user types:
+ * - Fighters: Athletes who have medical passes and can view their own data
+ * - Medics: Medical professionals who can view/update fighter medical records
+ */
+
 import { firebaseAuthService } from './firebaseAuth';
 import { mockDataService } from './mockData';
 import { CONFIG } from '../config/features';
@@ -19,6 +33,17 @@ import {
   Suspension
 } from '../types/api.types';
 
+/**
+ * Normalises a list of mixed-type values (strings, Address objects, EmergencyContact objects)
+ * into a consistent array of display-friendly strings.
+ *
+ * This handles the varying data formats returned by the API - addresses and contacts
+ * can come back as either simple strings or structured objects depending on how
+ * they were originally saved.
+ *
+ * @param items - Array of strings or structured objects from the API
+ * @returns Array of normalised string values, or undefined if empty/null
+ */
 const normaliseValueList = (
   items?: Array<string | Address | EmergencyContact>
 ): string[] | undefined => {
@@ -32,15 +57,19 @@ const normaliseValueList = (
         return '';
       }
 
+      // Already a string - use as-is
       if (typeof item === 'string') {
         return item;
       }
 
+      // Handle array values by joining them
       if (Array.isArray(item)) {
         return item.filter(Boolean).join(', ');
       }
 
+      // Handle structured objects (Address or EmergencyContact)
       if (typeof item === 'object') {
+        // Try to extract values in a sensible order for display
         const preferredKeys = [
           'value',
           'name',
@@ -63,6 +92,7 @@ const normaliseValueList = (
           return preferredValues.join(', ');
         }
 
+        // Fallback: use any string values found in the object
         const fallbackValues = Object.values(item)
           .filter((value) => typeof value === 'string' && value.trim().length > 0);
 
@@ -70,6 +100,7 @@ const normaliseValueList = (
           return fallbackValues.join(', ');
         }
 
+        // Last resort: JSON stringify the object
         return JSON.stringify(item);
       }
 
@@ -81,6 +112,10 @@ const normaliseValueList = (
   return normalised.length > 0 ? normalised : undefined;
 };
 
+/**
+ * Converts an array of address strings back into the structured format
+ * expected by the MTGB API for updates. The first address is marked as default.
+ */
 const formatAddressesForRequest = (addresses?: string[]): Address[] | undefined => {
   if (addresses === undefined) {
     return undefined;
@@ -96,6 +131,10 @@ const formatAddressesForRequest = (addresses?: string[]): Address[] | undefined 
   }));
 };
 
+/**
+ * Converts an array of emergency contact strings back into the structured
+ * format expected by the MTGB API for updates.
+ */
 const formatContactsForRequest = (contacts?: string[]): EmergencyContact[] | undefined => {
   if (contacts === undefined) {
     return undefined;
@@ -108,16 +147,27 @@ const formatContactsForRequest = (contacts?: string[]): EmergencyContact[] | und
   return contacts.map((contact) => ({ value: contact }));
 };
 
-// Helper to determine user type from scopes
+/**
+ * Determines the user type based on their permission scopes.
+ * Medics have 'personalise:role:medic' or 'personalise:role:coach' in their scopes.
+ * All other users are treated as fighters.
+ */
 const getUserTypeFromScopes = (scopes: string[]): 'fighter' | 'medic' => {
-  // Look for personalise:role:medic (which uses coach endpoint)
   if (scopes.some(scope => scope.includes('personalise:role:medic') || scope.includes('personalise:role:coach'))) {
     return 'medic';
   }
   return 'fighter';
 };
 
-// Helper to make authenticated API calls to MTGB API
+/**
+ * Makes authenticated HTTP requests to the MTGB API.
+ * Automatically attaches the Firebase bearer token to all requests.
+ *
+ * @param endpoint - API endpoint path (e.g., '/profile/me')
+ * @param method - HTTP method (GET, PUT, POST)
+ * @param body - Optional request body for PUT/POST requests
+ * @returns Typed API response with success status and data/error
+ */
 const makeAuthenticatedRequest = async <T>(
   endpoint: string,
   method: 'GET' | 'PUT' | 'POST' = 'GET',
@@ -125,7 +175,7 @@ const makeAuthenticatedRequest = async <T>(
 ): Promise<ApiResponse<T>> => {
   try {
     const bearerToken = await firebaseAuthService.getBearerToken();
-    
+
     if (!bearerToken) {
       return {
         success: false,
@@ -146,7 +196,7 @@ const makeAuthenticatedRequest = async <T>(
 
     if (!response.ok) {
       let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      
+
       try {
         const errorData = await response.json();
         errorMessage = errorData.message || errorData.error || errorMessage;
@@ -161,7 +211,7 @@ const makeAuthenticatedRequest = async <T>(
     }
 
     const data = await response.json();
-    
+
     return {
       success: true,
       data,
@@ -174,7 +224,16 @@ const makeAuthenticatedRequest = async <T>(
   }
 };
 
-// Helper to combine API responses into UserProfile
+/**
+ * Combines data from multiple MTGB API endpoints into a single UserProfile object.
+ *
+ * The MTGB API splits user data across several endpoints:
+ * - /profile/me: Basic profile info (name, email, scopes)
+ * - /profile/me/pii: Personal identifiable info (DOB, addresses, contacts)
+ * - /fighter/me or /coach/me: Role-specific data (membership status)
+ *
+ * This function merges all that data into one convenient object for the app.
+ */
 const buildUserProfile = (
   uid: string,
   token: string,
@@ -190,7 +249,7 @@ const buildUserProfile = (
     // Firebase data
     uid,
     firebaseToken: token,
-    
+
     // Profile data
     profileId: profile.profileId,
     memberCode: profile.memberCode,
@@ -200,30 +259,43 @@ const buildUserProfile = (
     mobile: profile.mobile,
     mobileVerified: profile.mobileVerified,
     scopes: profile.scopes,
-    
+
     // Derived
     userType,
-    
-    // PII data
+
+    // PII data (normalised for consistent display)
     dateOfBirth: pii?.dateOfBirth,
     biologicalSex: pii?.biologicalSex,
     addresses: normaliseValueList(pii?.addresses),
     emergencyContacts: normaliseValueList(pii?.emergencyContacts),
-    
+
     // Role data
     status: roleResponse?.status,
-    
+
     // Internal
     createdAt: new Date(),
   };
 };
 
+/**
+ * Main API service class for the MTGB Member Portal.
+ * Provides methods for authentication, profile management, and medical pass operations.
+ */
 class ApiService {
   /**
-   * Authenticate with Firebase and get bearer token
+   * Authenticates a user and retrieves their full profile.
+   *
+   * Login flow:
+   * 1. For medic demo accounts (email contains 'medic' or 'doctor'): Use mock service
+   * 2. For real accounts: Firebase auth -> MTGB API profile fetch
+   *
+   * @param email - User's email address
+   * @param password - User's password
+   * @returns Auth user object and full user profile
    */
   async login(email?: string, password?: string): Promise<ApiResponse<{ user: AuthUser; profile: UserProfile }>> {
     // Medic demo login (mock) - for demo purposes only
+    // This allows testing the medic portal without real medic credentials
     const emailLower = (email || '').toLowerCase();
     if (emailLower.includes('medic') || emailLower.includes('doctor')) {
       return await mockDataService.login(email || '', password || '');
@@ -238,9 +310,9 @@ class ApiService {
     }
 
     try {
-      // Step 1: Authenticate with Firebase REST API
+      // Step 1: Authenticate with Firebase REST API to get access token
       const authResponse = await firebaseAuthService.signInWithEmailAndPassword(email, password);
-      
+
       if (!authResponse.success || !authResponse.data) {
         return {
           success: false,
@@ -250,9 +322,9 @@ class ApiService {
 
       const { uid, email: userEmail } = authResponse.data;
 
-      // Step 2: Get user profile from MTGB API
+      // Step 2: Use the token to fetch the user's profile from MTGB API
       const profileResponse = await this.getUserProfile();
-      
+
       if (!profileResponse.success || !profileResponse.data) {
         return {
           success: false,
@@ -282,11 +354,17 @@ class ApiService {
   }
 
   /**
-   * Get complete user profile (combines multiple API calls)
+   * Fetches and combines the complete user profile from multiple API endpoints.
+   *
+   * Makes parallel calls to:
+   * - /profile/me: Basic profile info
+   * - /profile/me/pii: Personal identifiable information
+   * - /fighter/me OR /coach/me: Role-specific data based on user type
+   *
+   * @returns Complete UserProfile object combining all API data
    */
   async getUserProfile(): Promise<ApiResponse<UserProfile>> {
     try {
-      // Get bearer token and UID
       const bearerToken = await firebaseAuthService.getBearerToken();
       if (!bearerToken) {
         return {
@@ -295,7 +373,7 @@ class ApiService {
         };
       }
 
-      // Get profile data
+      // First, get the basic profile to determine user type
       const profileResponse = await makeAuthenticatedRequest<ProfileResponse>('/profile/me');
       if (!profileResponse.success || !profileResponse.data) {
         return {
@@ -307,10 +385,10 @@ class ApiService {
       const profile = profileResponse.data;
       const userType = getUserTypeFromScopes(profile.scopes);
 
-      // Get PII data
+      // Fetch PII data (addresses, emergency contacts, etc.)
       const piiResponse = await makeAuthenticatedRequest<PiiResponse>('/profile/me/pii');
-      
-      // Get role-specific data
+
+      // Fetch role-specific data based on user type
       let fighterResponse: ApiResponse<FighterResponse> | null = null;
       let coachResponse: ApiResponse<CoachResponse> | null = null;
 
@@ -320,9 +398,9 @@ class ApiService {
         coachResponse = await makeAuthenticatedRequest<CoachResponse>('/coach/me');
       }
 
-      // Extract UID from bearer token or use profile ID
       const uid = profile.profileId;
-      
+
+      // Combine all data into a single UserProfile object
       const userProfile = buildUserProfile(
         uid,
         bearerToken,
@@ -345,11 +423,21 @@ class ApiService {
   }
 
   /**
-   * Update user profile
+   * Updates a user's profile with the provided changes.
+   *
+   * This method intelligently routes updates to the correct API endpoints:
+   * - Basic info (name, email, mobile) -> PUT /profile/me
+   * - Personal info (DOB, sex, addresses, contacts) -> PUT /profile/me/pii
+   *
+   * After updates, it fetches and returns the complete refreshed profile.
+   *
+   * @param uid - User's unique identifier (unused but kept for interface consistency)
+   * @param updates - Partial profile object containing fields to update
+   * @returns Updated complete UserProfile
    */
   async updateUserProfile(uid: string, updates: Partial<UserProfile>): Promise<ApiResponse<UserProfile>> {
     try {
-      // Update profile basic info
+      // Update basic profile info if any basic fields changed
       if (updates.name || updates.email || updates.mobile) {
         const profileRequest: UpdateProfileRequest = {
           name: updates.name || '',
@@ -371,8 +459,9 @@ class ApiService {
         }
       }
 
-      // Update PII if provided
+      // Update PII (personally identifiable information) if any PII fields changed
       if (updates.dateOfBirth || updates.biologicalSex || updates.addresses || updates.emergencyContacts) {
+        // Convert display strings back to API format
         const formattedAddresses = formatAddressesForRequest(updates.addresses as string[] | undefined);
         const formattedContacts = formatContactsForRequest(updates.emergencyContacts as string[] | undefined);
 
@@ -397,7 +486,7 @@ class ApiService {
         }
       }
 
-      // Return updated profile
+      // Fetch and return the complete updated profile
       return await this.getUserProfile();
     } catch (error: any) {
       return {
@@ -408,7 +497,8 @@ class ApiService {
   }
 
   /**
-   * Update user personalization/scopes
+   * Updates the user's personalisation/permission scopes.
+   * Scopes control what features and data the user can access.
    */
   async updatePersonalization(scopes: string[]): Promise<ApiResponse<ProfileResponse>> {
     const scopeRequest: UpdateScopeRequest = {
@@ -422,13 +512,23 @@ class ApiService {
     );
   }
 
+  // ============================================================================
+  // Medical Pass Operations (Mock/Demo)
+  // These methods use the mock data service as the backend API for medical
+  // pass features is not yet implemented. Replace with real API calls when ready.
+  // ============================================================================
+
   /**
-   * Medical pass and history (mock/demo - backend not yet implemented)
+   * Retrieves a fighter's medical pass data including history and suspension status.
    */
   async getMedicalPass(profileId: string): Promise<ApiResponse<MedicalPassResponse>> {
     return await mockDataService.getMedicalPass(profileId);
   }
 
+  /**
+   * Adds a new medical entry to a fighter's medical history.
+   * Only callable by authenticated medics.
+   */
   async addMedicalEntry(
     profileId: string,
     request: AddMedicalEntryRequest
@@ -436,6 +536,10 @@ class ApiService {
     return await mockDataService.addMedicalEntry(profileId, request);
   }
 
+  /**
+   * Sets or clears a suspension on a fighter's medical pass.
+   * Pass undefined to clear an existing suspension.
+   */
   async setSuspension(
     profileId: string,
     suspension: Suspension | undefined
@@ -444,7 +548,7 @@ class ApiService {
   }
 
   /**
-   * Logout
+   * Logs out the current user by clearing stored authentication tokens.
    */
   async logout(): Promise<void> {
     firebaseAuthService.signOut();

@@ -1,5 +1,17 @@
-// Firebase REST API Authentication Service
-// Uses Firebase REST API instead of Firebase SDK for authentication
+/**
+ * Firebase REST API Authentication Service
+ *
+ * This service handles authentication via Firebase's REST API endpoints
+ * rather than the Firebase SDK. This approach is used because:
+ * 1. It provides more control over token management
+ * 2. The access tokens can be used directly as Bearer tokens for the MTGB API
+ * 3. It allows for custom token refresh logic
+ *
+ * Authentication flow:
+ * 1. Sign in with email/password -> Get refresh token
+ * 2. Exchange refresh token -> Get access token (used as Bearer token)
+ * 3. Auto-refresh access token before expiry (5 minute buffer)
+ */
 
 import { CONFIG } from '../config/features';
 import {
@@ -9,13 +21,27 @@ import {
   ApiResponse,
 } from '../types/api.types';
 
+/**
+ * Manages Firebase authentication tokens for the application.
+ * Stores tokens in memory and handles automatic refresh before expiry.
+ */
 export class FirebaseAuthService {
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
-  private tokenExpiresAt: number | null = null;
+  private accessToken: string | null = null;      // Bearer token for API calls
+  private refreshToken: string | null = null;     // Long-lived token for getting new access tokens
+  private tokenExpiresAt: number | null = null;   // Timestamp when access token expires
 
   /**
-   * Sign in using Firebase REST API and exchange for access token
+   * Authenticates a user with email and password.
+   *
+   * This is a two-step process:
+   * 1. Sign in with Firebase to get a refresh token
+   * 2. Exchange the refresh token for an access token
+   *
+   * The access token is what we use as a Bearer token for MTGB API calls.
+   *
+   * @param email - User's email address
+   * @param password - User's password
+   * @returns Access token, user ID, and email on success
    */
   async signInWithEmailAndPassword(
     email: string,
@@ -40,7 +66,7 @@ export class FirebaseAuthService {
         };
       }
 
-      // Store tokens
+      // Store tokens in memory for later use
       this.accessToken = tokenResult.data.access_token;
       this.refreshToken = signInResult.data.refreshToken;
       this.tokenExpiresAt = Date.now() + (parseInt(tokenResult.data.expires_in) * 1000);
@@ -62,23 +88,30 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Get current access token (ensures it's not expired)
+   * Returns a valid access token for API calls.
+   *
+   * This method handles automatic token refresh - if the current token
+   * is expired or will expire within 5 minutes, it refreshes first.
+   * This prevents API calls from failing due to expired tokens.
+   *
+   * @returns Valid access token, or null if not authenticated
    */
   async getBearerToken(): Promise<string | null> {
     if (!this.accessToken || !this.refreshToken) {
       return null;
     }
 
-    // Check if token is expired (with 5 minute buffer)
-    if (this.tokenExpiresAt && Date.now() > (this.tokenExpiresAt - 300000)) {
-      // Token is expired or will expire soon, refresh it
+    // Check if token is expired or will expire within 5 minutes (300000ms)
+    const FIVE_MINUTES = 300000;
+    if (this.tokenExpiresAt && Date.now() > (this.tokenExpiresAt - FIVE_MINUTES)) {
+      // Token needs refresh - attempt to get a new one
       const refreshResult = await this.exchangeRefreshToken(this.refreshToken);
       if (refreshResult.success && refreshResult.data) {
         this.accessToken = refreshResult.data.access_token;
         this.tokenExpiresAt = Date.now() + (parseInt(refreshResult.data.expires_in) * 1000);
         return this.accessToken;
       } else {
-        // Refresh failed, clear tokens
+        // Refresh failed - user needs to log in again
         this.signOut();
         return null;
       }
@@ -88,7 +121,7 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Sign out - clear stored tokens
+   * Clears all stored tokens, effectively logging out the user.
    */
   signOut(): void {
     this.accessToken = null;
@@ -97,7 +130,11 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Step 1: Sign in with Firebase to get refresh token
+   * Calls the Firebase REST API to authenticate with email/password.
+   * Returns a refresh token that can be exchanged for an access token.
+   *
+   * Firebase REST Auth endpoint:
+   * https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword
    */
   private async firebaseSignIn(email: string, password: string): Promise<ApiResponse<FirebaseSignInResponse>> {
     const requestBody: FirebaseSignInRequest = {
@@ -133,7 +170,11 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Step 2: Exchange refresh token for access token
+   * Exchanges a refresh token for a new access token.
+   * This is called both during initial sign-in and when refreshing expired tokens.
+   *
+   * Firebase Token Exchange endpoint:
+   * https://securetoken.googleapis.com/v1/token
    */
   private async exchangeRefreshToken(refreshToken: string): Promise<ApiResponse<FirebaseTokenExchangeResponse>> {
     const response = await fetch(

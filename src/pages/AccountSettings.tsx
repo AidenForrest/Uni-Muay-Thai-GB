@@ -1,3 +1,22 @@
+/**
+ * Account Settings Page
+ *
+ * Allows users to view and edit their profile information.
+ *
+ * Editable fields:
+ * - Date of birth
+ * - Biological sex
+ * - Addresses (multiple allowed, entered one per line)
+ * - Emergency contacts (multiple allowed, entered one per line)
+ *
+ * Read-only fields (require admin contact to change):
+ * - Name, Email, Mobile, Member Code, Account Type
+ *
+ * The page supports two modes:
+ * - View mode: Displays all profile information
+ * - Edit mode: Allows modification of editable fields
+ */
+
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -7,11 +26,14 @@ import { UserProfile } from '../types/api.types';
 export default function AccountSettings() {
   const { userProfile, updateUserProfile, logout } = useAuth();
   const navigate = useNavigate();
+
+  // UI state
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  // Form state - only contains editable fields
   const [formData, setFormData] = useState<Partial<UserProfile>>({
     dateOfBirth: userProfile?.dateOfBirth || '',
     biologicalSex: userProfile?.biologicalSex || 'male',
@@ -19,6 +41,9 @@ export default function AccountSettings() {
     emergencyContacts: userProfile?.emergencyContacts || []
   });
 
+  /**
+   * Sync form data when userProfile changes (e.g., after page load or profile update).
+   */
   useEffect(() => {
     if (userProfile) {
       setFormData({
@@ -30,7 +55,12 @@ export default function AccountSettings() {
     }
   }, [userProfile]);
 
+  /**
+   * Handles changes to simple input fields (dateOfBirth, biologicalSex).
+   * Only allows updates to these specific fields as a safety measure.
+   */
   const handleInputChange = (field: string, value: any) => {
+    // Only allow updates to editable simple fields
     if (field !== 'dateOfBirth' && field !== 'biologicalSex') {
       return;
     }
@@ -38,6 +68,11 @@ export default function AccountSettings() {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  /**
+   * Handles changes to list fields (addresses, emergencyContacts).
+   * Splits textarea content by newlines into an array of strings.
+   * Empty lines are filtered out.
+   */
   const handleListChange = (field: 'addresses' | 'emergencyContacts', value: string) => {
     const items = value
       .split('\n')
@@ -47,13 +82,17 @@ export default function AccountSettings() {
     setFormData(prev => ({ ...prev, [field]: items }));
   };
 
+  /**
+   * Saves the current form data to the API.
+   * On success, updates the global auth context with the new profile data.
+   */
   const handleSave = async () => {
     if (!userProfile) return;
-    
+
     setIsLoading(true);
     setError('');
     setSuccess('');
-    
+
     try {
       const updates: Partial<UserProfile> = {
         dateOfBirth: formData.dateOfBirth || undefined,
@@ -63,9 +102,9 @@ export default function AccountSettings() {
       };
 
       const response = await apiService.updateUserProfile(userProfile.uid, updates);
-      
+
       if (response.success && response.data) {
-        updateUserProfile(response.data);
+        updateUserProfile(response.data);  // Update global auth context
         setIsEditing(false);
         setSuccess('Profile updated successfully!');
       } else {
@@ -78,6 +117,9 @@ export default function AccountSettings() {
     }
   };
 
+  /**
+   * Cancels editing and reverts form data to the current profile values.
+   */
   const handleCancel = () => {
     setFormData({
       dateOfBirth: userProfile?.dateOfBirth || '',
@@ -90,6 +132,9 @@ export default function AccountSettings() {
     setSuccess('');
   };
 
+  /**
+   * Logs out the user and redirects to the home page.
+   */
   const handleLogout = async () => {
     try {
       await logout();

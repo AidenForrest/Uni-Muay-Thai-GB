@@ -1,8 +1,27 @@
+/**
+ * Medical Pass Page (Public)
+ *
+ * Displays a fighter's medical pass information.
+ * This page is accessed via QR code scan at events.
+ *
+ * URL format: /medical/:profileId
+ *
+ * Displays:
+ * - Fighter's basic info (name, DOB, contact details)
+ * - Current suspension status (cleared/suspended)
+ * - Suspension details if active
+ * - Complete medical history timeline
+ *
+ * This is a public page - no authentication required.
+ * Medical professionals scan the athlete's QR code to access this page.
+ */
+
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { MedicalEntry, MedicalPassResponse } from '../types/api.types';
 
+/** Human-readable labels for medical entry types */
 const entryLabels: Record<string, string> = {
   pre_fight_check: 'Pre-fight Check',
   injury_assessment: 'Injury Assessment',
@@ -12,6 +31,7 @@ const entryLabels: Record<string, string> = {
   note: 'Note',
 };
 
+/** Formats an ISO date string to a human-readable local format */
 const formatDate = (iso?: string) => {
   if (!iso) return '';
   const date = new Date(iso);

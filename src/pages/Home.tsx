@@ -1,3 +1,17 @@
+/**
+ * Home Page (Landing Page)
+ *
+ * The public-facing landing page for Muay Thai GB.
+ * Displays:
+ * - Navigation with login/signup buttons
+ * - Hero section with call-to-action
+ * - Features grid highlighting the medical pass system
+ * - Footer with contact information and quick links
+ *
+ * This page is only accessible to unauthenticated users.
+ * Authenticated users are redirected to the dashboard.
+ */
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 

@@ -1,3 +1,13 @@
+/**
+ * Login Form Component
+ *
+ * Provides email/password authentication for existing users.
+ * On successful login, redirects to the dashboard.
+ *
+ * Note: For demo purposes, emails containing 'medic' or 'doctor'
+ * will log in with a mock medic account (see mockData.ts).
+ */
+
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -5,6 +15,8 @@ import { useNavigate } from 'react-router-dom';
 export default function LoginForm() {
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Form input state
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -12,6 +24,7 @@ export default function LoginForm() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /** Updates form state when input values change */
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
@@ -19,9 +32,10 @@ export default function LoginForm() {
     });
   };
 
+  /** Handles form submission - authenticates user and redirects on success */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       setError('');
       setLoading(true);

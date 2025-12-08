@@ -1,3 +1,22 @@
+/**
+ * App Component - Application Root
+ *
+ * Sets up the application routing and authentication context.
+ *
+ * Route Structure:
+ * - / (Home) - Public landing page
+ * - /login - Login form (public)
+ * - /signup - Signup info page (public)
+ * - /dashboard - Main user dashboard (protected)
+ * - /account-settings - Profile management (protected)
+ * - /medical/:profileId - Medical pass view (public, accessed via QR)
+ *
+ * Authentication Flow:
+ * - Unauthenticated users can access public routes
+ * - Attempting to access protected routes redirects to login
+ * - Authenticated users accessing public routes are redirected to dashboard
+ */
+
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -9,11 +28,19 @@ import SignupForm from './components/Auth/SignupForm';
 import MedicalPass from './pages/MedicalPass';
 import './styles/App.css';
 
+/**
+ * Route wrapper that requires authentication.
+ * Redirects to login if user is not authenticated.
+ */
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth();
   return currentUser ? <>{children}</> : <Navigate to="/login" />;
 }
 
+/**
+ * Route wrapper for public-only pages.
+ * Redirects authenticated users to the dashboard.
+ */
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth();
   return !currentUser ? <>{children}</> : <Navigate to="/dashboard" />;

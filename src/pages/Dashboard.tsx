@@ -1,3 +1,21 @@
+/**
+ * Dashboard Page
+ *
+ * Main authenticated user interface that displays different content based on user type:
+ *
+ * For Fighters:
+ * - Profile information display
+ * - QR code for their digital medical pass
+ * - Quick access to account settings
+ *
+ * For Medics:
+ * - All of the above, plus...
+ * - Medical Portal: Search for fighters and manage their medical records
+ * - Add medical entries (pre-fight checks, injury assessments, etc.)
+ * - Issue or clear medical suspensions
+ * - View complete medical history timeline
+ */
+
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -8,15 +26,27 @@ import { MedicalEntry, MedicalPassResponse, Suspension } from '../types/api.type
 export default function Dashboard() {
   const { userProfile, logout } = useAuth();
   const navigate = useNavigate();
-  const [medicTargetId, setMedicTargetId] = useState('');
-  const [medicData, setMedicData] = useState<MedicalPassResponse | null>(null);
-  const [medicLoading, setMedicLoading] = useState(false);
-  const [medicError, setMedicError] = useState<string | null>(null);
+
+  // ============================================================================
+  // Medic Portal State
+  // These state variables are only used when the logged-in user is a medic
+  // ============================================================================
+  const [medicTargetId, setMedicTargetId] = useState('');           // Fighter ID being searched/viewed
+  const [medicData, setMedicData] = useState<MedicalPassResponse | null>(null);  // Loaded fighter data
+  const [medicLoading, setMedicLoading] = useState(false);          // Loading state for API calls
+  const [medicError, setMedicError] = useState<string | null>(null); // Error messages
+
+  // Medical entry form state
   const [entryNotes, setEntryNotes] = useState('');
   const [entryType, setEntryType] = useState<MedicalEntry['entryType']>('pre_fight_check');
+
+  // Suspension form state
   const [suspensionReason, setSuspensionReason] = useState('Medical suspension for observation');
   const [suspensionDays, setSuspensionDays] = useState(7);
 
+  /**
+   * Logs the user out and redirects to home page.
+   */
   const handleLogout = async () => {
     try {
       await logout();
@@ -26,6 +56,7 @@ export default function Dashboard() {
     }
   };
 
+  // Show loading state while profile is being fetched
   if (!userProfile) {
     return (
       <div className="dashboard-loading">
@@ -34,6 +65,15 @@ export default function Dashboard() {
     );
   }
 
+  // ============================================================================
+  // Medic Portal Functions
+  // These functions handle the medical record management features
+  // ============================================================================
+
+  /**
+   * Searches for a fighter by their profile ID and loads their medical pass data.
+   * Called when the medic clicks "Search Fighter" button.
+   */
   const loadMedicRecord = async () => {
     if (!medicTargetId) return;
     setMedicLoading(true);
@@ -47,6 +87,11 @@ export default function Dashboard() {
     setMedicLoading(false);
   };
 
+  /**
+   * Adds a new medical entry to the fighter's record.
+   * The entry includes type (pre-fight check, injury assessment, etc.),
+   * notes from the medic, and is timestamped automatically.
+   */
   const addEntry = async () => {
     if (!medicTargetId || !entryNotes) return;
     setMedicLoading(true);
@@ -58,17 +103,28 @@ export default function Dashboard() {
     });
     if (response.success && response.data) {
       setMedicData(response.data);
-      setEntryNotes('');
+      setEntryNotes('');  // Clear form after successful submission
     } else {
       setMedicError(response.error || 'Unable to add entry');
     }
     setMedicLoading(false);
   };
 
+  /**
+   * Issues or clears a medical suspension on a fighter.
+   *
+   * @param clear - If true, removes existing suspension. If false, creates new suspension.
+   *
+   * When issuing a suspension:
+   * - Start date is set to now
+   * - End date is calculated from suspensionDays state
+   * - Records the issuing medic's name
+   */
   const setSuspension = async (clear = false) => {
     if (!medicTargetId) return;
     setMedicLoading(true);
 
+    // Build suspension object or undefined to clear
     const suspension: Suspension | undefined = clear
       ? undefined
       : {

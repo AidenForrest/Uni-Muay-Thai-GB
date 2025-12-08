@@ -1,6 +1,20 @@
-// TypeScript types based on MuayThai GB API swagger specification
+/**
+ * API Type Definitions
+ *
+ * TypeScript interfaces for all API requests, responses, and internal models.
+ * Based on the MTGB API swagger specification.
+ *
+ * Structure:
+ * - ApiResponse: Generic wrapper for API responses
+ * - Address/EmergencyContact: Personal data structures
+ * - ProfileResponse, FighterResponse, CoachResponse, PiiResponse: API endpoints
+ * - MedicalEntry, Suspension, MedicalPassResponse: Medical pass features (mock)
+ * - Firebase*: Firebase REST API authentication types
+ * - UserProfile: Combined internal model used throughout the app
+ * - AuthUser: Simplified user object for auth context
+ */
 
-// Base API Response wrapper
+/** Generic wrapper for all API responses - includes success flag and error message */
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
